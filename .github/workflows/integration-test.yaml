@@ -33,10 +33,10 @@ jobs:
       - name: setup env
         run: |
           source ~/.bashrc
-      - name: make controller-gen
-        run: make controller-gen
       - name: checkout code
         uses: actions/checkout@v2
+      - name: make controller-gen
+        run: make controller-gen
       - name: setup kind and run integration tests
         run: make integration-test
       - name: cleanup all the kind clusters
