@@ -37,6 +37,10 @@ jobs:
         uses: actions/checkout@v2
       - name: make controller-gen
         run: make controller-gen
+      - name: install kubebuilder
+        run: |
+          curl -L -o kubebuilder https://go.kubebuilder.io/dl/latest/$(go env GOOS)/$(go env GOARCH)
+          chmod +x kubebuilder && mv kubebuilder /usr/local/bin/
       - name: setup kind and run integration tests
         run: make integration-test
       - name: cleanup all the kind clusters
