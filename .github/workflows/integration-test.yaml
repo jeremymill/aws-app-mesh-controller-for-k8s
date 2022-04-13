@@ -39,8 +39,7 @@ jobs:
         run: make controller-gen
       - name: install kubebuilder
         run: |
-          curl -L -o kubebuilder https://go.kubebuilder.io/dl/latest/$(go env GOOS)/$(go env GOARCH)
-          chmod +x kubebuilder && mv kubebuilder /usr/local/bin/
+          chmod +x ./scripts/install-kubebuilder.sh && ./scripts/install-kubebuilder.sh
       - name: setup kind and run integration tests
         run: make integration-test
       - name: cleanup all the kind clusters
