@@ -35,7 +35,6 @@ jobs:
       - name: cleanup all the kind clusters
         run: VERSION=${{ github.event.inputs.tag }} make delete-all-kind-clusters
   beta-release:
-    needs: build
     name: beta-release
     runs-on: ubuntu-18.04
     permissions:
@@ -59,4 +58,4 @@ jobs:
           role-session-name: ControllerBetaRelease
       - name: Push docker image
         run: |
-          docker push ${{ secrets.BETA_AWS_ACCOUNT }}.dkr.ecr.us-west-2.amazonaws.com/amazon/appmesh-controller:${{ github.event.inputs.tag }}
+          docker push ${{ secrets.BETA_AWS_ACCOUNT }}.dkr.ecr.us-west-2.amazonaws.com/amazon/appmesh-controller:${{ github.event.inputs.tag }}-beta
