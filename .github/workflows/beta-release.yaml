@@ -61,4 +61,4 @@ jobs:
         run: |
           aws ecr get-login-password --region us-west-2 | docker login --username AWS --password-stdin ${{ secrets.BETA_AWS_ACCOUNT }}.dkr.ecr.us-west-2.amazonaws.com
           docker tag ${{ secrets.CI_AWS_ACCOUNT }}.dkr.ecr.us-west-2.amazonaws.com/amazon/appmesh-controller:${{ github.event.inputs.tag }} ${{ secrets.BETA_AWS_ACCOUNT }}.dkr.ecr.us-west-2.amazonaws.com/amazon/appmesh-controller:${{ github.event.inputs.tag }}-beta
-          docker push ${{ secrets.BETA_AWS_ACCOUNT }}.dkr.ecr.us-west-2.amazonaws.com/amazon/appmesh-controller
+          docker push ${{ secrets.BETA_AWS_ACCOUNT }}.dkr.ecr.us-west-2.amazonaws.com/amazon/appmesh-controller:${{ github.event.inputs.tag }}-beta
