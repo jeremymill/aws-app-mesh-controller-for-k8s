@@ -49,6 +49,7 @@ jobs:
           role-session-name: ControllerBetaRelease
       - name: Pull docker image
         run: |
+          aws ecr get-login-password --region us-west-2 | docker login --username AWS --password-stdin ${{ secrets.CI_AWS_ACCOUNT }}.dkr.ecr.us-west-2.amazonaws.com
           docker pull ${{ secrets.CI_AWS_ACCOUNT }}.dkr.ecr.us-west-2.amazonaws.com/amazon/appmesh-controller:${{ github.event.inputs.tag }}
       - name: Configure AWS Credentials (beta)
         uses: aws-actions/configure-aws-credentials@v1
@@ -58,4 +59,5 @@ jobs:
           role-session-name: ControllerBetaRelease
       - name: Push docker image
         run: |
+          aws ecr get-login-password --region us-west-2 | docker login --username AWS --password-stdin ${{ secrets.BETA_AWS_ACCOUNT }}.dkr.ecr.us-west-2.amazonaws.com
           docker push ${{ secrets.BETA_AWS_ACCOUNT }}.dkr.ecr.us-west-2.amazonaws.com/amazon/appmesh-controller:${{ github.event.inputs.tag }}-beta
