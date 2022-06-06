@@ -39,13 +39,15 @@ func NewDefaultResourceManager(
 	appMeshSDK services.AppMesh,
 	referencesResolver references.Resolver,
 	accountID string,
-	log logr.Logger) ResourceManager {
+	log logr.Logger,
+	vsMap map[string][]appmesh.Backend) ResourceManager {
 	return &defaultResourceManager{
 		k8sClient:          k8sClient,
 		appMeshSDK:         appMeshSDK,
 		referencesResolver: referencesResolver,
 		accountID:          accountID,
 		log:                log,
+		vsMap:              vsMap,
 	}
 }
 
@@ -55,9 +57,11 @@ type defaultResourceManager struct {
 	referencesResolver references.Resolver
 	accountID          string
 	log                logr.Logger
+	vsMap              map[string][]appmesh.Backend
 }
 
 func (m *defaultResourceManager) Reconcile(ctx context.Context, vs *appmesh.VirtualService) error {
+	m.log.Info("Attempting to reconcile " + vs.Name)
 	ms, err := m.findMeshDependency(ctx, vs)
 	if err != nil {
 		return err
@@ -95,6 +99,30 @@ func (m *defaultResourceManager) Reconcile(ctx context.Context, vs *appmesh.Virt
 			return err
 		}
 	}
+	if _, ok := m.vsMap[vs.Namespace]; !ok {
+		m.vsMap[vs.Namespace] = []appmesh.Backend{}
+	}
+	if vsList, ok := m.vsMap[vs.Namespace]; ok {
+		var inList = false
+		for _, e := range vsList {
+			if e.VirtualService.VirtualServiceRef.Name == vs.Name {
+				inList = true
+				break
+			}
+		}
+		if !inList {
+			m.vsMap[vs.Namespace] = append(vsList, appmesh.Backend{
+				VirtualService: appmesh.VirtualServiceBackend{
+					VirtualServiceRef: &appmesh.VirtualServiceReference{
+						Namespace: aws.String(vs.Namespace),
+						Name:      vs.Name,
+					},
+				},
+			})
+			m.log.Info("Added implied virtual service " + vs.Name)
+		}
+	}
+
 	return m.updateCRDVirtualService(ctx, vs, sdkVS)
 }
 

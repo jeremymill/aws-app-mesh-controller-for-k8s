@@ -18,6 +18,7 @@ package controllers
 
 import (
 	"context"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	"github.com/aws/aws-app-mesh-controller-for-k8s/pkg/k8s"
 	"github.com/aws/aws-app-mesh-controller-for-k8s/pkg/references"
@@ -90,6 +91,20 @@ func (r *virtualServiceReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Watches(&source.Kind{Type: &appmesh.Mesh{}}, r.enqueueRequestsForMeshEvents).
 		Watches(&source.Kind{Type: &appmesh.VirtualNode{}}, r.enqueueRequestsForVirtualNodeEvents).
 		Watches(&source.Kind{Type: &appmesh.VirtualRouter{}}, r.enqueueRequestsForVirtualRouterEvents).
+		Watches(&source.Kind{Type: &appmesh.VirtualService{}},
+			handler.EnqueueRequestsFromMapFunc(func(a client.Object) []reconcile.Request {
+				vnList := &appmesh.VirtualNodeList{}
+				requests := []reconcile.Request{}
+				if err := r.k8sClient.List(context.Background(), vnList, &client.ListOptions{Namespace: a.GetNamespace()}); err != nil {
+					r.log.Error(err, "failed to enqueue virtualNodes for virtual service reconcile")
+					return requests
+				}
+				for _, vn := range vnList.Items {
+					r.log.Info("requesting reconcile for " + vn.Name)
+					requests = append(requests, reconcile.Request{NamespacedName: k8s.NamespacedName(&vn)})
+				}
+				return requests
+			})).
 		WithOptions(controller.Options{MaxConcurrentReconciles: 3}).
 		Complete(r)
 }

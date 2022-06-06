@@ -573,9 +573,14 @@ func Test_defaultResourceManager_findVirtualServiceDependencies(t *testing.T) {
 			ctrl := gomock.NewController(t)
 			defer ctrl.Finish()
 			resolver := mock_resolver.NewMockResolver(ctrl)
+			k8sSchema := runtime.NewScheme()
+			clientgoscheme.AddToScheme(k8sSchema)
+			appmesh.AddToScheme(k8sSchema)
+			k8sClient := testclient.NewClientBuilder().WithScheme(k8sSchema).Build()
 
 			m := &defaultResourceManager{
 				referencesResolver: resolver,
+				k8sClient:          k8sClient,
 				log:                log.NullLogger{},
 			}
 

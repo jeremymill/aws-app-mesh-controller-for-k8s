@@ -37,7 +37,8 @@ func NewDefaultResourceManager(
 	appMeshSDK services.AppMesh,
 	referencesResolver references.Resolver,
 	accountID string,
-	log logr.Logger) ResourceManager {
+	log logr.Logger,
+	vsMap map[string][]appmesh.Backend) ResourceManager {
 
 	return &defaultResourceManager{
 		k8sClient:          k8sClient,
@@ -45,6 +46,7 @@ func NewDefaultResourceManager(
 		referencesResolver: referencesResolver,
 		accountID:          accountID,
 		log:                log,
+		vsMap:              vsMap,
 	}
 }
 
@@ -55,6 +57,7 @@ type defaultResourceManager struct {
 	referencesResolver references.Resolver
 	accountID          string
 	log                logr.Logger
+	vsMap              map[string][]appmesh.Backend
 }
 
 func (m *defaultResourceManager) Reconcile(ctx context.Context, vn *appmesh.VirtualNode) error {
@@ -66,6 +69,7 @@ func (m *defaultResourceManager) Reconcile(ctx context.Context, vn *appmesh.Virt
 		return err
 	}
 	vsByKey, err := m.findVirtualServiceDependencies(ctx, vn)
+	m.log.Info("reconciling virtualnode/" + vn.Name)
 	if err != nil {
 		return err
 	}
@@ -133,17 +137,39 @@ func (m *defaultResourceManager) validateMeshDependencies(ctx context.Context, m
 
 // findVirtualServiceDependencies find the VirtualService dependencies for this virtualNode.
 func (m *defaultResourceManager) findVirtualServiceDependencies(ctx context.Context, vn *appmesh.VirtualNode) (map[types.NamespacedName]*appmesh.VirtualService, error) {
-	vsByKey := make(map[types.NamespacedName]*appmesh.VirtualService, len(vn.Spec.Backends))
+	vsByKey := make(map[types.NamespacedName]*appmesh.VirtualService)
 	vsRefs := ExtractVirtualServiceReferences(vn)
+	vsList := &appmesh.VirtualServiceList{}
+	if err := m.k8sClient.List(ctx, vsList, &client.ListOptions{Namespace: vn.GetNamespace()}); err != nil {
+		m.log.Error(err, "failed to list virtual services")
+	}
+	for _, vs := range vsList.Items {
+		m.log.Info("adding implied backend " + vs.Name)
+		vsRefs = append(vsRefs, appmesh.VirtualServiceReference{
+			Namespace: aws.String(vs.Namespace),
+			Name:      vs.Name,
+		})
+	}
+	/*
+		for _, backend := range m.vsMap[vn.Namespace] {
+			if backend.VirtualService.VirtualServiceRef != nil {
+				vsRefs = append(vsRefs, *backend.VirtualService.VirtualServiceRef)
+				m.log.Info("Added implied backend")
+			}
+		}
+	*/
 	for _, vsRef := range vsRefs {
+		m.log.Info(vn.Name + ": Resolving " + vsRef.Name)
 		vsKey := references.ObjectKeyForVirtualServiceReference(vn, vsRef)
 		if _, ok := vsByKey[vsKey]; ok {
+			m.log.Info(vn.Name + ": Skipping " + vsRef.Name)
 			continue
 		}
 		vs, err := m.referencesResolver.ResolveVirtualServiceReference(ctx, vn, vsRef)
 		if err != nil {
 			return nil, errors.Wrapf(err, "failed to resolve virtualServiceRef")
 		}
+		m.log.Info(vn.Name + ": Resolved " + vsRef.Name)
 		vsByKey[vsKey] = vs
 	}
 	return vsByKey, nil
@@ -212,6 +238,8 @@ func (m *defaultResourceManager) updateSDKVirtualNode(ctx context.Context, sdkVN
 		)
 		return sdkVN, nil
 	}
+
+	m.log.Info(vn.Name + " is controlled")
 
 	diff := cmp.Diff(desiredSDKVNSpec, actualSDKVNSpec, opts)
 	m.log.V(1).Info("virtualNodeSpec changed",
@@ -311,7 +339,20 @@ func BuildSDKVirtualNodeSpec(vn *appmesh.VirtualNode, vsByKey map[types.Namespac
 		return sdkVSRefConvertFunc(a.(*appmesh.VirtualServiceReference), b.(*string), scope)
 	})
 	sdkVNSpec := &appmeshsdk.VirtualNodeSpec{}
-	if err := converter.Convert(&vn.Spec, sdkVNSpec, nil); err != nil {
+	newSpec := vn.Spec.DeepCopy()
+	newSpec.Backends = []appmesh.Backend{}
+	for _, vs := range vsByKey {
+		newSpec.Backends = append(newSpec.Backends, appmesh.Backend{
+			VirtualService: appmesh.VirtualServiceBackend{
+				VirtualServiceRef: &appmesh.VirtualServiceReference{
+					Namespace: aws.String(vs.Namespace),
+					Name:      vs.Name,
+				},
+			},
+		})
+	}
+
+	if err := converter.Convert(newSpec, sdkVNSpec, nil); err != nil {
 		return nil, err
 	}
 	return sdkVNSpec, nil
