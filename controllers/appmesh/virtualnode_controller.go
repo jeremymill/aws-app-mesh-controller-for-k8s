@@ -14,6 +14,9 @@ package controllers
 
 import (
 	"context"
+	"k8s.io/apimachinery/pkg/types"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
+	"strings"
 
 	"github.com/aws/aws-app-mesh-controller-for-k8s/pkg/k8s"
 	"github.com/aws/aws-app-mesh-controller-for-k8s/pkg/runtime"
@@ -70,6 +73,31 @@ func (r *virtualNodeReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&appmesh.VirtualNode{}).
 		Watches(&source.Kind{Type: &appmesh.Mesh{}}, r.enqueueRequestsForMeshEvents).
+		Watches(&source.Kind{Type: &appmesh.VirtualService{}},
+			handler.EnqueueRequestsFromMapFunc(func(a client.Object) []reconcile.Request {
+				// TODO make a util class to get backend resources from labels
+				vnMap := map[types.NamespacedName]bool{}
+				requests := []reconcile.Request{}
+				for label, _ := range a.GetLabels() {
+					if strings.HasPrefix(label, "backendpolicy") {
+						vnList := &appmesh.VirtualNodeList{}
+						if err := r.k8sClient.List(context.Background(), vnList, client.HasLabels{label}); err != nil {
+							r.log.Error(err, "failed to get virtualnodes with label: "+label)
+							return requests
+						}
+						for _, vn := range vnList.Items {
+							r.log.Info("adding " + vn.Name)
+							vnMap[k8s.NamespacedName(&vn)] = true
+						}
+					}
+				}
+
+				for vn, _ := range vnMap {
+					r.log.Info("requesting reconcile for " + vn.Name)
+					requests = append(requests, reconcile.Request{NamespacedName: vn})
+				}
+				return requests
+			})).
 		WithOptions(controller.Options{MaxConcurrentReconciles: 3}).
 		Complete(r)
 }

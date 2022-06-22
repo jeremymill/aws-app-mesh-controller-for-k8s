@@ -2,6 +2,7 @@ package virtualnode
 
 import (
 	"context"
+	"strings"
 
 	appmesh "github.com/aws/aws-app-mesh-controller-for-k8s/apis/appmesh/v1beta2"
 	"github.com/aws/aws-app-mesh-controller-for-k8s/pkg/aws/services"
@@ -139,25 +140,27 @@ func (m *defaultResourceManager) validateMeshDependencies(ctx context.Context, m
 func (m *defaultResourceManager) findVirtualServiceDependencies(ctx context.Context, vn *appmesh.VirtualNode) (map[types.NamespacedName]*appmesh.VirtualService, error) {
 	vsByKey := make(map[types.NamespacedName]*appmesh.VirtualService)
 	vsRefs := ExtractVirtualServiceReferences(vn)
-	vsList := &appmesh.VirtualServiceList{}
-	if err := m.k8sClient.List(ctx, vsList, &client.ListOptions{Namespace: vn.GetNamespace()}); err != nil {
-		m.log.Error(err, "failed to list virtual services")
-	}
-	for _, vs := range vsList.Items {
-		m.log.Info("adding implied backend " + vs.Name)
-		vsRefs = append(vsRefs, appmesh.VirtualServiceReference{
-			Namespace: aws.String(vs.Namespace),
-			Name:      vs.Name,
-		})
-	}
-	/*
-		for _, backend := range m.vsMap[vn.Namespace] {
-			if backend.VirtualService.VirtualServiceRef != nil {
-				vsRefs = append(vsRefs, *backend.VirtualService.VirtualServiceRef)
-				m.log.Info("Added implied backend")
+	for label, _ := range vn.GetLabels() {
+		if strings.HasPrefix(label, "backendpolicy") {
+			vsList := &appmesh.VirtualServiceList{}
+			if err := m.k8sClient.List(context.Background(), vsList, client.HasLabels{label}); err != nil {
+				m.log.Error(err, "failed to get virtualservices with label: "+label)
+				continue
+			}
+			for _, vs := range vsList.Items {
+				m.log.Info("adding implied backend " + vs.Name)
+				vsKey := references.ObjectKeyForVirtualServiceReference(vn, appmesh.VirtualServiceReference{
+					Namespace: aws.String(vs.Namespace),
+					Name:      vs.Name,
+				})
+				if _, ok := vsByKey[vsKey]; ok {
+					m.log.Info(vn.Name + ": Skipping " + vs.Name)
+					continue
+				}
+				vsByKey[vsKey] = &vs
 			}
 		}
-	*/
+	}
 	for _, vsRef := range vsRefs {
 		m.log.Info(vn.Name + ": Resolving " + vsRef.Name)
 		vsKey := references.ObjectKeyForVirtualServiceReference(vn, vsRef)
